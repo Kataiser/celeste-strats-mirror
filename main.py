@@ -49,18 +49,21 @@ async def scrape(channel: discord.TextChannel):
         async for message in channel.history(limit=None, before=oldest_scraped):
             gfycat_url_result = re_gfycat_url.search(message.content)
 
-            if gfycat_url_result:
-                with open(f'messages\\{message.id}.json', 'w', encoding='UTF8') as message_file:
-                    message_timestamp = int(message.created_at.replace(tzinfo=datetime.timezone.utc).timestamp())
-                    tags = ' '.join([word for word in message.content.split() if word.startswith('#')])
-                    message_data = {'author_id': message.author.id, 'author_name': message.author.display_name, 'time': message_timestamp,
-                                    'gfycat_url': gfycat_url_result.group(), 'tags': tags, 'content': message.content}
-                    print(message.author.display_name, message_data)
-                    json.dump(message_data, message_file, indent=4)
+            if not gfycat_url_result:
+                continue
 
-                oldest_scraped_file.seek(0)
-                oldest_scraped_file.truncate()
-                oldest_scraped_file.write(str(message_timestamp))
+            message_timestamp = int(message.created_at.replace(tzinfo=datetime.timezone.utc).timestamp())
+            tags = ' '.join([word for word in message.content.split() if word.startswith('#')])
+            message_data = {'author_id': message.author.id, 'author_name': message.author.display_name, 'time': message_timestamp,
+                            'gfycat_url': gfycat_url_result.group(), 'tags': tags, 'content': message.content}
+            print(message.author.display_name, message_data)
+
+            with open(f'messages\\{message.id}.json', 'w', encoding='UTF8') as message_file:
+                json.dump(message_data, message_file, indent=4)
+
+            oldest_scraped_file.seek(0)
+            oldest_scraped_file.truncate()
+            oldest_scraped_file.write(str(message_timestamp))
 
 
 async def post(channel: discord.TextChannel):
@@ -74,23 +77,24 @@ async def post(channel: discord.TextChannel):
 
             with open(f'messages\\{message_filename}', 'r') as message_file:
                 message_data = json.load(message_file)
-                print(message_data)
-                gif_html = requests.get(message_data['gfycat_url'], timeout=10).text
-                video_url = re_video_url.search(gif_html).group()
-                video_file = discord.File(io.BytesIO(requests.get(video_url, timeout=20).content), filename=video_url.rpartition('/')[2])
-                thread_message = (f"Strat by: <@{message_data['author_id']}>"
-                                  f"\nPosted on: <t:{message_data['time']}:f>"
-                                  f"\n\n{message_data['content']}")
-                thread = await channel.create_thread(name=f"{message_data['tags']} from {message_data['author_name']}", type=discord.ChannelType.public_thread)
-                await thread.send(thread_message, file=video_file, allowed_mentions=discord.AllowedMentions(users=False))
-                await thread.edit(archived=True)
 
-                async for message in channel.history(limit=3):
-                    if message.author == client.user:
-                        await message.delete()
-                        break
+            print(message_data)
+            gif_html = requests.get(message_data['gfycat_url'], timeout=10).text
+            video_url = re_video_url.search(gif_html).group()
+            video_file = discord.File(io.BytesIO(requests.get(video_url, timeout=20).content), filename=video_url.rpartition('/')[2])
+            thread_message = (f"Strat by: <@{message_data['author_id']}>"
+                              f"\nPosted on: <t:{message_data['time']}:f>"
+                              f"\n\n{message_data['content']}")
+            thread = await channel.create_thread(name=f"{message_data['tags']} from {message_data['author_name']}", type=discord.ChannelType.public_thread)
+            await thread.send(thread_message, file=video_file, allowed_mentions=discord.AllowedMentions(users=False))
+            await thread.edit(archived=True)
 
-                posted_file.write(f'{message_filename}\n')
+            async for message in channel.history(limit=3):
+                if message.author == client.user:
+                    await message.delete()
+                    break
+
+            posted_file.write(f'{message_filename}\n')
 
 
 @client.event
