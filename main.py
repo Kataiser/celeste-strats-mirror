@@ -1,6 +1,5 @@
 import datetime
 import io
-import json
 import os
 import re
 import sys
@@ -9,6 +8,7 @@ import traceback
 import discord
 import requests
 import requests_cache
+import ujson
 
 intents = discord.Intents.none()
 intents.message_content = True
@@ -25,7 +25,7 @@ def main():
 
 @client.event
 async def on_ready():
-    print(f"Logged in as {client.user}")
+    print(f"Logged in as {client.user}\n")
     test_channel_id = 1137437338000162938
     real_channel_id = 617809769322774533
     channel = await client.fetch_channel(test_channel_id)
@@ -34,6 +34,9 @@ async def on_ready():
         await scrape(channel)
     else:
         await post(channel)
+
+    print("\nDONE")
+    await client.close()
 
 
 async def scrape(channel: discord.TextChannel):
@@ -46,7 +49,7 @@ async def scrape(channel: discord.TextChannel):
         else:
             oldest_scraped = datetime.datetime.now()
 
-        async for message in channel.history(limit=None, before=oldest_scraped):
+        async for message in channel.history(limit=None, oldest_first=True, before=oldest_scraped):
             gfycat_url_result = re_gfycat_url.search(message.content)
 
             if not gfycat_url_result:
@@ -54,12 +57,15 @@ async def scrape(channel: discord.TextChannel):
 
             message_timestamp = int(message.created_at.replace(tzinfo=datetime.timezone.utc).timestamp())
             tags = ' '.join([word for word in message.content.split() if word.startswith('#')])
-            message_data = {'author_id': message.author.id, 'author_name': message.author.display_name, 'time': message_timestamp,
+            message_data = {'author_id': message.author.id, 'author_name': message.author.display_name, 'time': message_timestamp, 'link': message.jump_url,
                             'gfycat_url': gfycat_url_result.group(), 'tags': tags, 'content': message.content}
-            print(message.author.display_name, message_data)
+            print(message_data)
+
+            if not tags:
+                print("WARNING: no tags")
 
             with open(f'messages\\{message.id}.json', 'w', encoding='UTF8') as message_file:
-                json.dump(message_data, message_file, indent=4)
+                ujson.dump(message_data, message_file, indent=4, escape_forward_slashes=False)
 
             oldest_scraped_file.seek(0)
             oldest_scraped_file.truncate()
@@ -76,7 +82,7 @@ async def post(channel: discord.TextChannel):
                 continue
 
             with open(f'messages\\{message_filename}', 'r') as message_file:
-                message_data = json.load(message_file)
+                message_data = ujson.load(message_file)
 
             print(message_data)
             gif_html = requests.get(message_data['gfycat_url'], timeout=10).text
@@ -84,9 +90,10 @@ async def post(channel: discord.TextChannel):
             video_file = discord.File(io.BytesIO(requests.get(video_url, timeout=20).content), filename=video_url.rpartition('/')[2])
             thread_message = (f"Strat by: <@{message_data['author_id']}>"
                               f"\nPosted on: <t:{message_data['time']}:f>"
+                              f"\nOriginal message: {message_data['link']}"
                               f"\n\n{message_data['content']}")
             thread = await channel.create_thread(name=f"{message_data['tags']} from {message_data['author_name']}", type=discord.ChannelType.public_thread)
-            await thread.send(thread_message, file=video_file, allowed_mentions=discord.AllowedMentions(users=False))
+            await thread.send(thread_message, file=video_file, suppress_embeds=True, allowed_mentions=discord.AllowedMentions(users=False))
             await thread.edit(archived=True)
 
             async for message in channel.history(limit=3):
