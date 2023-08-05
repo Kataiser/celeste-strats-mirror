@@ -70,26 +70,27 @@ async def post(channel: discord.TextChannel):
         for message_filename in os.listdir('messages'):
             if message_filename in posted_messages:
                 print(f"Skipping {message_filename}")
-            else:
-                with open(f'messages\\{message_filename}', 'r') as message_file:
-                    message_data = json.load(message_file)
-                    print(message_data)
-                    gif_html = requests.get(message_data['gfycat_url'], timeout=10).text
-                    video_url = re_video_url.search(gif_html).group()
-                    video_file = discord.File(io.BytesIO(requests.get(video_url, timeout=20).content), filename=video_url.rpartition('/')[2])
-                    thread_message = (f"Strat by: <@{message_data['author_id']}>"
-                                      f"\nPosted on: <t:{message_data['time']}:f>"
-                                      f"\n\n{message_data['content']}")
-                    thread = await channel.create_thread(name=f"{message_data['tags']} from {message_data['author_name']}", type=discord.ChannelType.public_thread)
-                    await thread.send(thread_message, file=video_file, allowed_mentions=discord.AllowedMentions(users=False))
-                    await thread.edit(archived=True)
+                continue
 
-                    async for message in channel.history(limit=3):
-                        if message.author == client.user:
-                            await message.delete()
-                            break
+            with open(f'messages\\{message_filename}', 'r') as message_file:
+                message_data = json.load(message_file)
+                print(message_data)
+                gif_html = requests.get(message_data['gfycat_url'], timeout=10).text
+                video_url = re_video_url.search(gif_html).group()
+                video_file = discord.File(io.BytesIO(requests.get(video_url, timeout=20).content), filename=video_url.rpartition('/')[2])
+                thread_message = (f"Strat by: <@{message_data['author_id']}>"
+                                  f"\nPosted on: <t:{message_data['time']}:f>"
+                                  f"\n\n{message_data['content']}")
+                thread = await channel.create_thread(name=f"{message_data['tags']} from {message_data['author_name']}", type=discord.ChannelType.public_thread)
+                await thread.send(thread_message, file=video_file, allowed_mentions=discord.AllowedMentions(users=False))
+                await thread.edit(archived=True)
 
-                    posted_file.write(f'{message_filename}\n')
+                async for message in channel.history(limit=3):
+                    if message.author == client.user:
+                        await message.delete()
+                        break
+
+                posted_file.write(f'{message_filename}\n')
 
 
 @client.event
