@@ -1,8 +1,9 @@
 .idea/
-messages/
+messages_*/
+__pycache__/
 secret.txt
 Screenshot 2023-08-05 123021.png
-posted.txt
-oldest_scraped.txt
+posted_*.txt
+oldest_scraped_*.txt
 dl_cache.sqlite
 invite.txt
