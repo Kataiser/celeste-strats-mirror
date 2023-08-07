@@ -31,9 +31,10 @@ def main():
 async def on_ready():
     print(f"Logged in as {client.user}\n")
     test_channel_id = 1137437338000162938
-    real_channel_id = 617809769322774533
+    main_channel_id = 617809769322774533
     mod_channel_id = 923103459354480691
-    channel = await client.fetch_channel(real_channel_id)
+    deathless_channel_id = 946912583716319332
+    channel = await client.fetch_channel(deathless_channel_id)
     messages_dir = f'messages_{channel.id}'
 
     if not os.path.isdir(messages_dir):
@@ -55,17 +56,21 @@ async def on_ready():
 
 
 async def scrape(channel: discord.TextChannel, messages_dir: str):
-    with open(f'oldest_scraped_{channel.id}.txt', 'r+') as oldest_scraped_file:
+    oldest_scraped_filename = f'oldest_scraped_{channel.id}.txt'
+
+    if not os.path.isfile(oldest_scraped_filename):
+        open(oldest_scraped_filename, 'wb').close()
+
+    with open(oldest_scraped_filename, 'r+') as oldest_scraped_file:
         oldest_scraped_read = oldest_scraped_file.read()
 
         if oldest_scraped_read:
-            oldest_scraped = datetime.datetime.fromtimestamp(int(oldest_scraped_read))
-            oldest_scraped.replace(tzinfo=datetime.timezone.utc)
+            oldest_scraped_timestamp = int(oldest_scraped_read)
         else:
-            oldest_scraped = datetime.datetime.now()
+            oldest_scraped_timestamp = {617809769322774533: 1567443600, 923103459354480691: 1640973600, 946912583716319332: 1646330400}[channel.id]
 
-        async for message in channel.history(limit=None, oldest_first=True, after=oldest_scraped):
-            gfycat_url_result = re_gfycat_url.search(message.content)
+        async for message in channel.history(limit=None, oldest_first=True, after=datetime.datetime.fromtimestamp(oldest_scraped_timestamp)):
+            gfycat_url_result = re_gfycat_url.findall(message.content)
 
             if not gfycat_url_result:
                 if 'gfycat' in message.content:
@@ -76,7 +81,7 @@ async def scrape(channel: discord.TextChannel, messages_dir: str):
             message_timestamp = int(message.created_at.replace(tzinfo=datetime.timezone.utc).timestamp())
             tags = ' '.join([word for word in message.content.split() if word.startswith('#')])
             message_data = {'author_id': message.author.id, 'author_name': message.author.display_name, 'time': message_timestamp, 'link': message.jump_url,
-                            'gfycat_url': gfycat_url_result.group(), 'tags': tags, 'content': message.content}
+                            'gfycat_urls': gfycat_url_result, 'tags': tags, 'content': message.content}
             print(message_data)
 
             if not tags:
@@ -97,12 +102,19 @@ async def download(messages_dir: str):
             message_data = ujson.load(message_file)
 
         print(message_data)
-        video_data, video_filename = download_from_gfycat_url(message_data['gfycat_url'])
-        print(len(video_data), video_filename)
+
+        for url in message_data['gfycat_urls']:
+            video_data, video_filename = download_from_gfycat_url(url)
+            print(len(video_data), video_filename)
 
 
 async def post(channel: discord.TextChannel, messages_dir: str):
-    with open(f'posted_{channel.id}.txt', 'r+') as posted_file:
+    posted_filename = f'posted_{channel.id}.txt'
+
+    if not os.path.isfile(posted_filename):
+        open(posted_filename, 'wb').close()
+
+    with open(posted_filename, 'r+') as posted_file:
         posted_messages = posted_file.read()
 
         for message_filename in os.listdir(messages_dir):
@@ -114,17 +126,22 @@ async def post(channel: discord.TextChannel, messages_dir: str):
                 message_data = ujson.load(message_file)
 
             print(message_data)
-            thread = await channel.create_thread(name=f"{message_data['tags']} from {message_data['author_name']}", type=discord.ChannelType.public_thread)
-            video_data, video_filename = download_from_gfycat_url(message_data['gfycat_url'])
-            video_file = discord.File(io.BytesIO(video_data), filename=video_filename)
+
+            thread = await channel.create_thread(name=f"{message_data['tags'][:70]} from {message_data['author_name']}", type=discord.ChannelType.public_thread)
+            video_files = []
+
+            for url in message_data['gfycat_urls']:
+                video_data, video_filename = download_from_gfycat_url(url)
+                video_files.append(discord.File(io.BytesIO(video_data), filename=video_filename))
+
             thread_message = (f"Strat by: <@{message_data['author_id']}>"
                               f"\nPosted on: <t:{message_data['time']}:f>"
                               f"\nOriginal message: {message_data['link']}"
                               f"\n\n{message_data['content']}")
-            await thread.send(thread_message, file=video_file, suppress_embeds=True, allowed_mentions=discord.AllowedMentions(users=False))
+            await thread.send(thread_message, files=video_files, suppress_embeds=True, allowed_mentions=discord.AllowedMentions(users=False))
             await thread.edit(archived=True)
 
-            async for message in channel.history(limit=3):
+            async for message in channel.history(limit=1):
                 if message.author == client.user:
                     await message.delete()
 
@@ -145,6 +162,10 @@ async def on_error(*args):
 
 re_gfycat_url = re.compile(r'https://gfycat\.com/[A-Za-z]+')
 re_video_url = re.compile(r'https://giant\.gfycat\.com/[A-Za-z]+\.mp4')
+# oldest scrapes
+# main: 1567443600
+# mods: 1640973600
+# deathless: 1646330400
 
 if __name__ == '__main__':
     main()
